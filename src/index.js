@@ -7,7 +7,7 @@ const zlib = require('zlib');
 const Poloniex = require('poloniex-api-node');
 const {handlePoloniexMsg} = require('./poloniex');
 const {handleBittrexMsg, unpackData} = require('./bittrex');
-const {converToArray, setHighestBid} = require('./util');
+const {convertToArray, setHighestBid, takeTopN} = require('./util');
 const R = require('ramda');
 const WebSocket = require('faye-websocket');
 const http = require('http');
@@ -129,8 +129,7 @@ poloniex.on('open', () => {
 poloniex.on('message', (channelName, data, seq) => {
   if (channelName === 'BTC_ETH') {
     if (data[0].type === 'orderBook') {
-      console.log('populating book');
-      // hydrateOrderbookWithPoloniex(data);
+      hydrateOrderbookWithPoloniex(data);
     }
   }
 });

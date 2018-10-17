@@ -38,24 +38,24 @@ handleBittrexMsg = (data, book) => {
         switch (order.TY) {
           // add
           case 0:
-            console.log('adding buy order : ', order);
             for (var i = 0, len = book.children.length; i < len; i++) {
               if (Number(order.R) < book.children[i].price) {
                 let conformed = Object.assign(
                   book.children[i],
                   conformBittrexOrder(order, 'bid'),
                 );
-                console.log('inserting btx : ', conformed);
+                // console.log('inserting btx : ', conformed);
                 book.children.splice(i, 0, conformed);
                 break;
               }
             }
             break;
 
+          // remove
           case 1:
             let idx = indexOf(book, 'bid', order.R);
 
-            console.log('removing buy order : ', order);
+            // console.log('removing buy order : ', order);
             if (idx !== -1) {
               if (book.children[idx].pVol !== undefined) {
                 book.children[idx].bVol = undefined;
@@ -67,9 +67,11 @@ handleBittrexMsg = (data, book) => {
             }
 
             break;
+
           // update
           case 2:
             break;
+
           default:
             return book;
         }
@@ -82,7 +84,7 @@ handleBittrexMsg = (data, book) => {
         switch (order.TY) {
           // add
           case 0:
-            console.log('adding sell order : ', order);
+            // console.log('adding sell order : ', order);
 
             for (var i = 0, len = book.children.length; i < len; i++) {
               if (Number(order.R) < book.children[i].price) {
@@ -95,10 +97,11 @@ handleBittrexMsg = (data, book) => {
               }
             }
             break;
+
           case 1:
             let idx = indexOf(book, 'ask', order.R);
 
-            console.log('removing sell order : ', order);
+            // console.log('removing sell order : ', order);
             if (idx !== -1) {
               if (book.children[idx].pVol !== undefined) {
                 book.children[idx].bVol = undefined;
@@ -108,11 +111,12 @@ handleBittrexMsg = (data, book) => {
                 return book;
               }
             }
-
             break;
+
           // update
           case 2:
             break;
+
           default:
             return book;
         }
