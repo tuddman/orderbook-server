@@ -5,8 +5,9 @@ const signalR = require('signalr-client');
 const jsonic = require('jsonic');
 const zlib = require('zlib');
 const Poloniex = require('poloniex-api-node');
-const {handleMsg, setHighestBid} = require('./poloniex');
-const {unpackData} = require('./bittrex');
+const {handlePoloniexMsg} = require('./poloniex');
+const {handleBittrexMsg, unpackData} = require('./bittrex');
+const {converToArray, setHighestBid} = require('./util');
 const R = require('ramda');
 const WebSocket = require('faye-websocket');
 const http = require('http');
@@ -14,24 +15,20 @@ const port = 8000;
 
 const server = http.createServer();
 
-const convertToArray = coll => {
-  return Object.keys(coll).map(k => {
-    return [Number(k), Number(coll[k])];
-  });
-};
-
-const takeTopN = (arr, n) => {
-  return R.take(n, arr);
-};
-
 let book = {children: [], highestBid: 0};
+
+// add more PAIRs here to stream different pairs.
+// TODO: parameterize this so diff pair(s) are requested with ws.onMessage()
+let markets = {
+  BTCETH: {
+    bittrex: 'BTC-ETH',
+    poloniex: 'BTC_ETH',
+  },
+};
 
 // --------------------- Bittrex
 //
-let market = 'BTC-ETH',
-  raw,
-  b64,
-  json;
+let raw, b64, json;
 
 const hydrateOrderbookWithBittrex = data => {
   let asks = R.take(10, data.Z).map(a => {
@@ -51,37 +48,37 @@ const bittrex = new signalR.client('wss://socket.bittrex.com/signalr', ['c2']);
 bittrex.serviceHandlers.connected = function(connection) {
   console.log('connected');
 
-  bittrex.call('c2', 'QueryExchangeState', market).done(function(err, result) {
-    if (err) {
-      return console.error(err);
-    }
-
-    let unpacked = unpackData(result, (err, data) => {
-      if (!err) {
-        console.log('data : ', data);
-        hydrateOrderbookWithBittrex(data);
-        return data;
+  bittrex
+    .call('c2', 'QueryExchangeState', markets.BTCETH.bittrex)
+    .done(function(err, result) {
+      if (err) {
+        return console.error(err);
       }
+
+      let unpacked = unpackData(result, (err, data) => {
+        if (!err) {
+          hydrateOrderbookWithBittrex(data);
+          return data;
+        }
+      });
     });
-  });
 
   bittrex
-    .call('c2', 'SubscribeToExchangeDeltas', market)
+    .call('c2', 'SubscribeToExchangeDeltas', markets.BTCETH.bittrex)
     .done(function(err, result) {
       if (err) {
         return console.error(err);
       }
       if (result === true) {
-        console.log('Subscribed to ' + market + ' Exchange Deltas');
+        console.log(
+          'Subscribed to ' + markets.BTCETH.bittrex + ' Exchange Deltas',
+        );
       }
-
-      console.log('result :' + result);
     });
 };
 
 bittrex.serviceHandlers.messageReceived = function(message) {
   data = jsonic(message.utf8Data);
-  // console.log(data);
   if (data.hasOwnProperty('M')) {
     if (data.M[0]) {
       if (data.M[0].hasOwnProperty('A')) {
@@ -92,7 +89,8 @@ bittrex.serviceHandlers.messageReceived = function(message) {
           zlib.inflateRaw(raw, function(err, inflated) {
             if (!err) {
               json = JSON.parse(inflated.toString('utf8'));
-              console.log('msg:json : ', json);
+              // console.log('msg:json : ', json);
+              handleBittrexMsg(json, book);
             }
           });
         }
@@ -122,7 +120,7 @@ const hydrateOrderbookWithPoloniex = data => {
 };
 
 let poloniex = new Poloniex();
-poloniex.subscribe('BTC_ETH');
+poloniex.subscribe(markets.BTCETH.poloniex);
 
 poloniex.on('open', () => {
   console.log(`Poloniex WebSocket connection open`);
@@ -131,8 +129,8 @@ poloniex.on('open', () => {
 poloniex.on('message', (channelName, data, seq) => {
   if (channelName === 'BTC_ETH') {
     if (data[0].type === 'orderBook') {
-      console.log('establishing book');
-      hydrateOrderbookWithPoloniex(data);
+      console.log('populating book');
+      // hydrateOrderbookWithPoloniex(data);
     }
   }
 });
@@ -160,7 +158,7 @@ server.on('upgrade', function(request, socket, body) {
     });
 
     poloniex.on('message', (channelName, data, seq) => {
-      let msg = handleMsg(channelName, data, seq, book);
+      let msg = handlePoloniexMsg(channelName, data, seq, book);
       if (ws && msg) {
         ws.send(JSON.stringify(msg));
       }

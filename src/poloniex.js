@@ -3,43 +3,33 @@
 const _ = require('lodash');
 const R = require('ramda');
 
-const setHighestBid = book => {
-  let firstBid = book.children.find(e => {
-    return e.orderType === 'bid';
-  });
-
-  return firstBid ? firstBid.price : 0;
-};
+const {indexOf} = require('./util');
 
 // poloniex ws msg format -> conformed format
 const conformPoloniexOrder = rawOrder => {
   return {
-    pVol: Number(rawOrder.amount),
     orderType: rawOrder.type,
+    pVol: Number(rawOrder.amount),
     price: Number(rawOrder.rate),
   };
 };
 
 // returns updated book
-const handleMsg = (channelName, data, seq, book) => {
+const handlePoloniexMsg = (channelName, data, seq, book) => {
   if (channelName === 'BTC_ETH') {
     if (data[0].type === 'orderBookModify') {
+      let idx = indexOf(book, data[0].data.type, data[0].data.rate);
 
-      let idx = _.findIndex(book.children, e => {
-        let oType = e.orderType;
-        let bType = data[0].data.type;
-        let oPrice = Number(e.price).toFixed(8);
-        let bPrice = Number(data[0].data.rate).toFixed(8);
-
-        return oType === bType && oPrice === bPrice;
-      });
-
+      // found the order in book...
       if (idx !== -1) {
-        let conformed = conformPoloniexOrder(book.children[idx]);
-
+        let conformed = Object.assign(
+          book.children[idx],
+          conformPoloniexOrder(data[0].data),
+        );
         R.update(idx, conformed, book);
       }
 
+      // could not find the order in book...
       if (idx === -1) {
         let prices = book.children.map(x => x.price);
 
@@ -61,18 +51,17 @@ const handleMsg = (channelName, data, seq, book) => {
     }
 
     if (data[0].type === 'orderBookRemove') {
-      // console.log('book removed:\n ', data[0]);
 
-      _.remove(book.children, e => {
-        let oType = e.orderType;
-        let bType = data[0].data.type;
-        let oPrice = Number(e.price).toFixed(8);
-        let bPrice = Number(data[0].data.rate).toFixed(8);
+      let idx = indexOf(book, data[0].data.type, data[0].data.rate);
 
-        // console.log('COMPARING : ', oType, bType, oPrice, bPrice);
-        return oType === bType && oPrice === bPrice;
-
-      })
+      if (idx !== -1) {
+        if (book.children[idx].bVol !== undefined) {
+          book.children[idx].pVol = undefined  
+        } else {
+          book.children.splice(idx, 1) 
+          return book;
+        }
+      }
 
       return book;
     }
@@ -80,6 +69,5 @@ const handleMsg = (channelName, data, seq, book) => {
 };
 
 module.exports = {
-  handleMsg,
-  setHighestBid,
+  handlePoloniexMsg,
 };
